@@ -22,105 +22,110 @@ class XdbSearcher(object):
     contentBuff = None
 
     @staticmethod
+    def loadVectorIndexFromFile(dbfile):
+        try:
+            f = io.open(dbfile, "rb")
+            f.seek(HeaderInfoLength)
+            vi_len = VectorIndexRows * VectorIndexCols * SegmentIndexSize
+            vector_data = f.read(vi_len)
+            f.close()
+            return vector_data
+        except IOError as e:
+            print("[Error]: %s" % e)
+
+    @staticmethod
     def loadContentFromFile(dbfile):
         try:
-            with io.open(dbfile, "rb") as f:
-                return f.read()
+            f = io.open(dbfile, "rb")
+            all_data = f.read()
+            f.close()
+            return all_data
         except IOError as e:
-            print(f"[Error]: {e}")
-            return None
+            print("[Error]: %s" % e)
 
     def __init__(self, dbfile=None, vectorIndex=None, contentBuff=None):
-        self.init_database(dbfile, vectorIndex, contentBuff)
+        self.initDatabase(dbfile, vectorIndex, contentBuff)
         self.countries = ujson.load(open("static/countries.json", "r"))
 
     def search(self, ip):
-        """根据IP地址查询对应区域信息"""
-        if not isinstance(ip, int):
+        if isinstance(ip, str):
+            if not ip.isdigit():
+                ip = self.ip2long(ip)
+            return self.searchByIPLong(ip)
+        else:
+            return self.searchByIPLong(ip)
+
+    def searchByIPStr(self, ip):
+        if not ip.isdigit():
             ip = self.ip2long(ip)
-        return self.search_by_ip_long(ip)
+        return self.searchByIPLong(ip)
 
-    def search_by_ip_long(self, ip):
-        """根据IP地址的Long值查询区域信息"""
-        # 定位到段索引块
-        s_ptr, e_ptr = self.get_content_index(ip)
-        if s_ptr == e_ptr == 0:
-            return ""
-
-        # 二分查找段索引块以获取区域信息
-        data_len, data_ptr = self.binary_search_segment_index(s_ptr, e_ptr, ip)
-        if data_ptr < 0:
-            return ""
-
-        # 读取区域信息
-        buffer_string = self.read_buffer(data_ptr, data_len)
-        if buffer_string:
-            return self.convert_format(buffer_string.decode("utf-8"))
-        return ""
-
-    def get_content_index(self, ip):
-        """根据IP地址定位到段索引块"""
-        il0 = (ip >> 24) & 0xFF
-        il1 = (ip >> 16) & 0xFF
+    def searchByIPLong(self, ip):
+        # locate the segment index block based on the vector index
+        sPtr = ePtr = 0
+        il0 = (int)((ip >> 24) & 0xFF)
+        il1 = (int)((ip >> 16) & 0xFF)
         idx = il0 * VectorIndexCols * VectorIndexSize + il1 * VectorIndexSize
 
-        s_ptr = e_ptr = 0
         if self.vectorIndex is not None:
-            s_ptr = self.get_long(self.vectorIndex, idx)
-            e_ptr = self.get_long(self.vectorIndex, idx + 4)
+            sPtr = self.getLong(self.vectorIndex, idx)
+            ePtr = self.getLong(self.vectorIndex, idx + 4)
         elif self.contentBuff is not None:
-            base_offset = HeaderInfoLength + idx
-            s_ptr = self.get_long(self.contentBuff, base_offset)
-            e_ptr = self.get_long(self.contentBuff, base_offset + 4)
+            sPtr = self.getLong(self.contentBuff, HeaderInfoLength + idx)
+            ePtr = self.getLong(self.contentBuff, HeaderInfoLength + idx + 4)
         else:
-            try:
-                self.__f.seek(HeaderInfoLength + idx)  # type: ignore[attr-defined]
-                buffer_ptr = self.__f.read(8)  # type: ignore[attr-defined]
-                s_ptr = self.get_long(buffer_ptr, 0)
-                e_ptr = self.get_long(buffer_ptr, 4)
-            except IOError as e:
-                print(f"[Error]: {e}")
-        return s_ptr, e_ptr
+            self.__f.seek(HeaderInfoLength + idx)  # type: ignore
+            buffer_ptr = self.__f.read(8)  # type: ignore
+            sPtr = self.getLong(buffer_ptr, 0)
+            ePtr = self.getLong(buffer_ptr, 4)
 
-    def binary_search_segment_index(self, s_ptr, e_ptr, ip):
-        """在段索引块中进行二分查找"""
-        data_len = data_ptr = -1
-        low = 0
-        high = (e_ptr - s_ptr) // SegmentIndexSize
-
-        while low <= high:
-            mid = (low + high) // 2
-            offset = s_ptr + mid * SegmentIndexSize
-            buffer_sip = self.read_buffer(offset, SegmentIndexSize)
-            if not buffer_sip:
-                break
-
-            sip = self.get_long(buffer_sip, 0)
+        # binary search the segment index block to get the region info
+        dataLen = dataPtr = int(-1)
+        l = int(0)
+        h = int((ePtr - sPtr) / SegmentIndexSize)
+        while l <= h:
+            m = int((l + h) >> 1)
+            p = int(sPtr + m * SegmentIndexSize)
+            # read the segment index
+            buffer_sip = self.readBuffer(p, SegmentIndexSize)
+            sip = self.getLong(buffer_sip, 0)
             if ip < sip:
-                high = mid - 1
+                h = m - 1
             else:
-                eip = self.get_long(buffer_sip, 4)
+                eip = self.getLong(buffer_sip, 4)
                 if ip > eip:
-                    low = mid + 1
+                    l = m + 1
                 else:
-                    data_len = self.read_short(buffer_sip, 8)
-                    data_ptr = self.get_long(buffer_sip, 10)
+                    dataLen = self.getInt2(buffer_sip, 8)
+                    dataPtr = self.getLong(buffer_sip, 10)
                     break
-        return data_len, data_ptr
 
-    def read_buffer(self, offset, length):
-        """从缓存或文件中读取数据"""
+        # empty match interception
+        if dataPtr < 0:
+            return ""
+
+        buffer_string = self.readBuffer(dataPtr, dataLen)
+        return_string = buffer_string.decode("utf-8")  # type: ignore
+        return return_string
+
+    def readBuffer(self, offset, length):
+        buffer = None
+        # check the in-memory buffer first
         if self.contentBuff is not None:
-            return self.contentBuff[offset : offset + length]
-        try:
-            if self.__f and self.__f.seek(offset):
-                return self.__f.read(length)
-        except IOError as e:
-            print(f"[Error]: {e}")
-        return b""
+            buffer = self.contentBuff[offset : offset + length]
+            return buffer
 
-    def init_database(self, dbfile, vi, cb):
-        """初始化数据库"""
+        # read from the file handle
+        if self.__f is not None:
+            self.__f.seek(offset)
+            buffer = self.__f.read(length)
+        return buffer
+
+    def initDatabase(self, dbfile, vi, cb):
+        """
+        " initialize the database for search
+        " param: dbFile, vectorIndex, contentBuff
+        """
         try:
             if cb is not None:
                 self.__f = None
@@ -130,29 +135,36 @@ class XdbSearcher(object):
                 self.__f = io.open(dbfile, "rb")
                 self.vectorIndex = vi
         except IOError as e:
-            print(f"[Error]: {e}")
+            print("[Error]: %s" % e)
             sys.exit()
 
-    @staticmethod
-    def ip2long(ip):
-        """将IP地址转换为Long值"""
+    def ip2long(self, ip):
         _ip = socket.inet_aton(ip)
         return struct.unpack("!L", _ip)[0]
 
-    @staticmethod
-    def get_long(buffer, offset):
-        """从缓冲区中读取4字节Long值"""
-        if len(buffer[offset : offset + 4]) == 4:
-            return struct.unpack("I", buffer[offset : offset + 4])[0]
+    def isip(self, ip):
+        p = ip.split(".")
+
+        if len(p) != 4:
+            return False
+        for pp in p:
+            if not pp.isdigit():
+                return False
+            if len(pp) > 3:
+                return False
+            if int(pp) > 255:
+                return False
+        return True
+
+    def getLong(self, b, offset):
+        if len(b[offset : offset + 4]) == 4:
+            return struct.unpack("I", b[offset : offset + 4])[0]
         return 0
 
-    @staticmethod
-    def read_short(buffer, offset):
-        """从缓冲区中读取2字节Short值"""
-        return (buffer[offset] & 0x00FF) | (buffer[offset + 1] << 8)
+    def getInt2(self, b, offset):
+        return (b[offset] & 0x000000FF) | (b[offset + 1] << 8)
 
     def close(self):
-        """关闭文件句柄并释放资源"""
         if self.__f is not None:
             self.__f.close()
         self.vectorIndex = None

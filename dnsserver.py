@@ -1,7 +1,7 @@
 import socket
 import concurrent.futures
 from traceback import format_exc
-from dns import message, rdatatype, rcode, rrset, resolver, rdataset
+from dns import message, rdatatype, rcode, rrset, resolver
 from typing import Optional, List, Dict, Any, Tuple
 import ujson
 from xdb import XdbSearcher
@@ -150,8 +150,8 @@ class DNSCache:
 class DNSRecords:
     def __init__(self):
         self.records: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
-        content_buffer = XdbSearcher.loadContentFromFile("static/ip2region.xdb")
-        self.xdb = XdbSearcher(contentBuff=content_buffer)
+        vi = XdbSearcher.loadVectorIndexFromFile("static/ip2region.xdb")
+        self.xdb = XdbSearcher(dbfile="static/ip2region.xdb", vectorIndex=vi)
 
     def add_record(
         self,
@@ -246,7 +246,7 @@ class DNSServer:
         self.file = file
         self.records = self.load_records()
         self.executor: concurrent.futures.ThreadPoolExecutor = (
-            concurrent.futures.ThreadPoolExecutor(max_workers=10)
+            concurrent.futures.ThreadPoolExecutor(max_workers=3)
         )
         self.running: bool = False
         self.cache = DNSCache(max_cache_size)

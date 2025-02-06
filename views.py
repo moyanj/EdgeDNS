@@ -55,9 +55,8 @@ def index():
     """API首页，返回所有DNS记录"""
     dns = current_app.config["dns"]
     records = dns.get_records()
-    return render_template_string(
-        open("static/index.html", "r").read(), records=records
-    )
+    with open("static/index.html", "r") as f:
+        return render_template_string(f.read(), records=records)
 
 
 @bp.route("/api/add", methods=["POST"])
