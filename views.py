@@ -1,6 +1,7 @@
 from typing import Any
 from flask import Blueprint, request, current_app, render_template_string, make_response
 import ujson
+from loguru import logger
 from flask_httpauth import HTTPBasicAuth
 
 
@@ -23,6 +24,14 @@ def jsonify(data: Any):
     """
     response = make_response(ujson.dumps(data))
     response.headers["Content-Type"] = "application/json"
+    return response
+
+
+@bp.after_request
+def after_request(response):
+    logger.debug(
+        f'{request.remote_addr} - "{request.method} {request.url}" {response.status_code}'
+    )
     return response
 
 
