@@ -167,7 +167,7 @@ def dns_query():
                 return jsonify({"error": "DNS 参数缺失"}), 400
             query_message = message.from_wire(b64decode(dns_query_data))
 
-        response = dnsser.make_response(query_message, request.remote_addr).to_wire()
+        response = dnsser.create_response(query_message, request.remote_addr).to_wire()
         return Response(response, mimetype="application/dns-message")
 
     except Exception as e:
