@@ -35,6 +35,12 @@ def jsonify(data: Any):
     return response
 
 
+@bp.before_request
+def before_request():
+    if request.headers.get("X-Real-IP"):
+        request.remote_addr = request.headers.get("X-Real-IP")
+
+
 @bp.after_request
 def after_request(response):
     logger.debug(
@@ -149,16 +155,17 @@ def dns_query():
     dnsser = current_app.config["dns"]
     # 解析请求中的 DNS 参数
     try:
-        if request.method == "POST":
-            dns_query_data = request.form.get("dns")
+        if (
+            request.method == "POST"
+            and request.headers.get("CONTENT_TYPE") == "application/dns-message"
+        ):
+            query_message = message.from_wire(request.stream.read())
         else:
             dns_query_data = request.args.get("dns")
 
-        if not dns_query_data:
-            return jsonify({"error": "DNS 参数缺失"}), 400
-
-        # 解码 Base64 数据并解析为 DNS 查询消息
-        query_message = message.from_wire(b64decode(dns_query_data))
+            if not dns_query_data:
+                return jsonify({"error": "DNS 参数缺失"}), 400
+            query_message = message.from_wire(b64decode(dns_query_data))
 
         response = dnsser.make_response(query_message, request.remote_addr).to_wire()
         return Response(response, mimetype="application/dns-message")
