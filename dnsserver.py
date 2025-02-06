@@ -174,7 +174,7 @@ class DNSServer:
                 logger.error(f"构造 RRset 时出错：{e}")
                 response.set_rcode(rcode.SERVFAIL)
         else:
-            res = self.dns_fallback(domain, qtype_text)
+            res = self.dns_fallback(query)
             if res is None:
                 response.set_rcode(rcode.NOERROR)  # 没有记录，返回 NOERROR
                 return response
@@ -223,13 +223,14 @@ class DNSServer:
     def get_records(self):
         return self.records.records
 
-    def dns_fallback(self, domain: str, record_type: str):
+    def dns_fallback(self, query: message.Message):
         resolv = resolver.Resolver(configure=False)
         resolv.nameservers = config["dns_fallback"]
         try:
             # 执行 DNS 查询
-            answers = resolv.resolve(domain, record_type)
-            return answers.response
+            answers = resolv.resolve(query.question[0].name, query.question[0].rdtype)
+            ret = message.make_response(query)
+            ret.answer = answers.response
         except Exception as e:
             logger.error(f"Fallback查询失败：{e}")
             return None
