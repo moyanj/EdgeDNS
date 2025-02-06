@@ -106,6 +106,7 @@ class XdbSearcher(object):
 
         buffer_string = self.readBuffer(dataPtr, dataLen)
         return_string = buffer_string.decode("utf-8")  # type: ignore
+        return_string = self.convert_format(region_str)
         return return_string
 
     def readBuffer(self, offset, length):
@@ -191,9 +192,6 @@ if __name__ == "__main__":
 
     # 加载整个内容到内存
     content_buffer = XdbSearcher.loadContentFromFile(db_path)
-    if content_buffer is None:
-        print("Failed to load content from file.")
-        sys.exit()
 
     # 创建查询对象
     searcher = XdbSearcher(contentBuff=content_buffer)
