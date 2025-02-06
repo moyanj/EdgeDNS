@@ -159,7 +159,7 @@ class DNSRecords:
 class DNSServer:
 
     def __init__(
-        self, ip: str = "127.0.0.1", port: int = 53, file: str = "data/records.json"
+        self, ip: str = "0.0.0.0", port: int = 53, file: str = "data/records.json"
     ):
         self.server_ip: str = ip
         self.server_port: int = port
@@ -170,7 +170,7 @@ class DNSServer:
         )
         self.running: bool = False
 
-    def create_response(self, query: message.Message, ip: str) -> message.Message:
+    def create_response(self, query: message.Message, ip: str):
         """根据客户端查询构造响应。"""
         qname = query.question[0].name
         qtype = query.question[0].rdtype
@@ -208,7 +208,7 @@ class DNSServer:
             logger.info(f"收到来自 {addr[0]}:{addr[1]} 的查询请求")
             query = message.from_wire(data)
             response = self.create_response(query, addr[0])
-            sock.sendto(response.to_wire(), addr)
+            sock.sendto(response.to_wire(), addr)  # type: ignore
         except Exception as e:
             print(format_exc())
             logger.error(f"处理请求时出错：{e}")
