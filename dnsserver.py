@@ -100,25 +100,7 @@ class DNSRecords:
                 return self.get_record_from_records(records_list, "default")
             return record
         logger.info(f"未找到 {domain} 的 {record_type} 记录")
-        return self.dns_fallback(domain, record_type)
-
-    def dns_fallback(self, domain: str, type: str):
-        resolv = resolver.Resolver(configure=False)
-        resolv.nameservers = config["dns_fallback"]
-        try:
-            # 执行 DNS 查询
-            answers = resolv.resolve(domain, type)
-
-            # 将查询结果转换为字符串
-            answer_str = " ".join(
-                str(answers.response.answer[0]).split(" ")[4:]
-            )  # 暂时返回第一个答案的字符串表示
-            ret = {"record": answer_str, "ttl": answers.response.answer[0].ttl}
-            logger.info(f"Fallback查询结果：{answer_str}")
-            return ret
-        except Exception as e:
-            logger.error(f"Fallback查询失败：{e}")
-            return None
+        return None
 
     def get_record_from_records(
         self, records: List[Dict[str, Any]], location: str
