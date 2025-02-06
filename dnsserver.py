@@ -300,7 +300,6 @@ class DNSServer:
         except Exception as e:
             print(format_exc())
             logger.error(f"处理请求时出错：{e}")
-            sock.close()
 
     def load_records(self) -> DNSRecords:
         """从文件中加载 DNS 记录。"""
