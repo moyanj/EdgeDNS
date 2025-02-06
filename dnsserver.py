@@ -173,6 +173,7 @@ class DNSServer:
             except Exception as e:
                 logger.error(f"构造 RRset 时出错：{e}")
                 response.set_rcode(rcode.SERVFAIL)
+            return response
         else:
             res = self.dns_fallback(query)
             if res is None:
