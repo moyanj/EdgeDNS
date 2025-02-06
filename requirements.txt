@@ -1,0 +1,5 @@
+dnspython
+flask
+flask-httpauth
+ujson
+loguru

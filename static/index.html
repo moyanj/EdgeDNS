@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS 记录管理系统</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">DNS 记录管理系统</h1>
+
+        <!-- 添加记录按钮 -->
+        <button type="button" class="btn btn-primary mb-4" data-bs-toggle="modal" data-bs-target="#addRecordModal">
+            添加记录
+        </button>
+
+        <!-- 记录表格 -->
+        <table class="table table-striped table-bordered">
+            <thead>
+                <tr>
+                    <th>域名</th>
+                    <th>记录类型</th>
+                    <th>记录值</th>
+                    <th>位置</th>
+                    <th>TTL</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="record-table-body"></tbody>
+        </table>
+    </div>
+
+    <!-- 添加记录模态框 -->
+    <div class="modal fade" id="addRecordModal" tabindex="-1" aria-labelledby="addRecordModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addRecordModalLabel">添加记录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-record-form">
+                        <div class="mb-3">
+                            <label for="domain" class="form-label">域名</label>
+                            <input type="text" class="form-control" id="domain" name="domain" placeholder="域名" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="type" class="form-label">记录类型</label>
+                            <select class="form-select" id="type" name="type" required>
+                                <option value="A">A</option>
+                                <option value="AAAA">AAAA</option>
+                                <option value="CNAME">CNAME</option>
+                                <option value="MX">MX</option>
+                                <option value="TXT">TXT</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="value" class="form-label">记录值</label>
+                            <input type="text" class="form-control" id="value" name="value" placeholder="记录值" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="ttl" class="form-label">TTL (默认 300)</label>
+                            <input type="number" class="form-control" id="ttl" name="ttl" value="300">
+                        </div>
+                        <div class="mb-3">
+                            <label for="location" class="form-label">位置 (默认 'default')</label>
+                            <select class="form-select" id="location" name="location">
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    <button type="button" class="btn btn-primary" id="submit-record">提交</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            // 加载位置数据
+            function loadLocations() {
+                $.ajax({
+                    url: '/api/countries', // 后端接口
+                    type: 'GET',
+                    success: function (response) {
+                        // 将后端返回的数据转换为下拉框的选项格式
+                        const locations = [];
+                        for (const key in response) {
+                            locations.push({
+                                name: key, // 显示的文本
+                                value: response[key] // 实际的值
+                            });
+                        }
+
+                        // 动态生成下拉框选项
+                        const locationSelect = $('#location');
+                        locations.forEach(location => {
+                            locationSelect.append(`
+                                <option value="${location.value}">${location.name}</option>
+                            `);
+                        });
+
+                        // 设置默认值为 'default'
+                        locationSelect.append(`
+                            <option value="default">default</option>
+                        `);
+
+                        // 设置默认选中为 'default'
+                        locationSelect.val('default');
+                    },
+                    error: function (error) {
+                        alert('加载位置数据失败，请重试!');
+                    }
+                });
+            }
+
+            // 初始化加载位置数据
+            loadLocations();
+
+            // 加载数据
+            function loadRecords() {
+                $.ajax({
+                    url: '/api/records',
+                    type: 'GET',
+                    success: function (response) {
+                        $('#record-table-body').empty(); // 清空表格内容
+                        $.each(response, function (domain, recordTypes) {
+                            $.each(recordTypes, function (type, entries) {
+                                $.each(entries, function (index, entry) {
+                                    $('#record-table-body').append(`
+                                        <tr data-domain="${domain}" data-type="${type}" 
+                                            data-value="${entry.record}" data-ttl="${entry.ttl}" 
+                                            data-location="${entry.location}">
+                                            <td>${domain}</td>
+                                            <td>${type}</td>
+                                            <td>${entry.record}</td>
+                                            <td>${entry.location}</td>
+                                            <td>${entry.ttl}</td>
+                                            <td>
+                                                <button class="btn btn-danger btn-sm delete-btn" 
+                                                    data-domain="${domain}" data-type="${type}">
+                                                    删除
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `);
+                                });
+                            });
+                        });
+                    },
+                    error: function (error) {
+                        alert('加载记录失败，请重试!');
+                    }
+                });
+            }
+
+            // 初始化加载数据
+            loadRecords();
+
+            // 提交记录
+            $('#submit-record').on('click', function () {
+                const domain = $('#domain').val();
+                const type = $('#type').val();
+                const value = $('#value').val();
+                const ttl = $('#ttl').val() || 300;
+                const location = $('#location').val() || 'default';
+
+                if (!domain || !type || !value) {
+                    alert('请填写所有必填项!');
+                    return;
+                }
+
+                $.ajax({
+                    url: '/api/add',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        domain: domain,
+                        type: type,
+                        value: value,
+                        ttl: ttl,
+                        location: location
+                    }),
+                    success: function (response) {
+                        $('#addRecordModal').modal('hide'); // 关闭模态框
+                        loadRecords(); // 刷新记录
+                    },
+                    error: function (error) {
+                        alert('添加记录失败，请重试!');
+                    }
+                });
+            });
+
+            // 删除记录
+            $(document).on('click', '.delete-btn', function () {
+                const domain = $(this).data('domain');
+                const type = $(this).data('type');
+                const confirmDelete = confirm('确认删除该记录？');
+
+                if (confirmDelete) {
+                    $.ajax({
+                        url: `/api/delete/${domain}/${type}`,
+                        type: 'DELETE',
+                        success: function () {
+                            loadRecords(); // 刷新记录
+                        },
+                        error: function () {
+                            alert('删除记录失败，请重试!');
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
