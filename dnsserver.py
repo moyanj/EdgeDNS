@@ -224,13 +224,15 @@ class DNSServer:
         return self.records.records
 
     def dns_fallback(self, query: message.Message):
+        logger.info("进入Fallback")
         resolv = resolver.Resolver(configure=False)
         resolv.nameservers = config["dns_fallback"]
         try:
             # 执行 DNS 查询
             answers = resolv.resolve(query.question[0].name, query.question[0].rdtype)
             ret = message.make_response(query)
-            ret.answer = answers.response
+            ret.answer = answers.response.answer
+            return ret
         except Exception as e:
             logger.error(f"Fallback查询失败：{e}")
             return None
