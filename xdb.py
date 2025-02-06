@@ -106,7 +106,7 @@ class XdbSearcher(object):
 
         buffer_string = self.readBuffer(dataPtr, dataLen)
         return_string = buffer_string.decode("utf-8")  # type: ignore
-        return_string = self.convert_format(region_str)
+        return_string = self.convert_format(return_string)
         return return_string
 
     def readBuffer(self, offset, length):
