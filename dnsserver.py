@@ -1,8 +1,9 @@
+from ast import Str
 import socket
 import concurrent.futures
 from traceback import format_exc
 from dns import message, rdatatype, rcode, rrset, resolver
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Generator
 import ujson
 from xdb import XdbSearcher
 from loguru import logger
@@ -28,7 +29,7 @@ def lpm(s1: List[str], s2: List[str]) -> int:
 
 def is_sub_line(
     records: List[Dict[str, str]], location: str
-) -> Optional[Dict[str, str]]:
+) -> Optional[List[Dict[str, str]]]:
     """
     根据层级一致性匹配最佳线路。
     """
@@ -44,16 +45,17 @@ def is_sub_line(
         return None  # 如果没有匹配的国家/地区，直接返回 None
 
     # 计算最长公共前缀（LPM）长度
-    best_match = max(
+    matchs = sorted(
         (
             (rec, lpm(rec["location"].split("/"), location_list))
             for rec in filtered_records
         ),
         key=lambda x: x[1],  # 按匹配层级排序
-        default=(None, 0),
     )
-
-    return best_match[0] if best_match[1] > 0 else None
+    # 去除LPM为0的记录
+    matchs = [rec for rec, lpm_len in matchs if lpm_len > 0]
+    # 获取匹配的两个记录
+    return matchs[2:]
 
 
 class DNSCache:
@@ -163,21 +165,27 @@ class DNSRecords:
             self.records[domain][record_type], location
         )
         if exists is not None:
-            self.records[domain][record_type].remove(exists)
+            for exist in exists:
+                self.records[domain][record_type].remove(exist)
         self.records[domain][record_type].append(
             {"record": record, "location": location, "ttl": ttl}
         )
 
-    def remove_record(self, domain: str, record_type: str) -> None:
+    def remove_record(self, domain: str, record_type: str, location: str) -> None:
         if domain in self.records:
             if record_type in self.records[domain]:
-                del self.records[domain][record_type]
+                for i in self.records[domain][record_type]:
+                    if i["location"] == location:
+                        self.records[domain][record_type].remove(i)
+                        break
+                if not self.records[domain][record_type]:
+                    del self.records[domain][record_type]
                 if not self.records[domain]:
                     del self.records[domain]
 
     def get_records(
         self, domain: str, record_type: str, ip: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[List[Dict[str, Any]]]:
         if domain in self.records and record_type in self.records[domain]:
             records_list = self.records[domain][record_type]
             client_location = self.get_ip_location(ip)
@@ -192,11 +200,12 @@ class DNSRecords:
 
     def get_record_from_records(
         self, records: List[Dict[str, Any]], location: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[List[Dict[str, Any]]]:
+        r = []
         for record in records:
             if record["location"] == location:
-                return record
-        return None
+                r.append(record)
+        return []
 
     def domain_exists(self, domain: str) -> bool:
         return domain in self.records
@@ -256,13 +265,14 @@ class DNSServer:
 
         domain = str(qname)
         logger.info(f"查询 {domain} 的 {qtype_text} 记录")
-        rec = self.records.get_records(domain, qtype_text, ip)
-        if rec is not None:
+        record = self.records.get_records(domain, qtype_text, ip)
+        if record is not None:
             try:
-                rr = rrset.from_text(
-                    domain, rec["ttl"], "IN", qtype_text, rec["record"]
-                )
-                response.answer.append(rr)
+                for rec in record:
+                    rr = rrset.from_text(
+                        domain, rec["ttl"], "IN", qtype_text, rec["record"]
+                    )
+                    response.answer.append(rr)
             except Exception as e:
                 logger.error(f"构造 RRset 时出错：{e}")
                 response.set_rcode(rcode.SERVFAIL)

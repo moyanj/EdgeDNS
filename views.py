@@ -106,6 +106,7 @@ def add():
 def delete(domain, record_type):
     """删除DNS记录"""
     dns = current_app.config["dns"]
+    location = request.args.get("location", "default")
 
     # 检查域名和记录类型是否存在
     if not dns.records.domain_exists(
@@ -115,7 +116,7 @@ def delete(domain, record_type):
     if not domain.endswith("."):
         domain += "."
     # 删除记录
-    dns.records.remove_record(domain, record_type)
+    dns.records.remove_record(domain, record_type, location)
     dns.save_records()
     return jsonify({"code": 200, "msg": "Record deleted successfully"})
 
