@@ -1,3 +1,4 @@
+import traceback
 from typing import Any
 from flask import (
     Blueprint,
@@ -170,6 +171,7 @@ def dns_query():
         return Response(response, mimetype="application/dns-message")
 
     except Exception as e:
+        print(traceback.format_exc())
         # 返回错误响应
         return jsonify({"error": "error"}), 500
 
