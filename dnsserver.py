@@ -192,9 +192,12 @@ class DNSServer:
                 logger.error(f"构造 RRset 时出错：{e}")
                 response.set_rcode(rcode.SERVFAIL)
         else:
-            response.set_rcode(rcode.NOERROR)  # 没有记录，返回 NOERROR
-
-        return response
+            res = self.dns_fallback(domain, qtype_text)
+            if res is None:
+                response.set_rcode(rcode.NOERROR)  # 没有记录，返回 NOERROR
+                return response
+            else:
+                return res
 
     def handle_request(
         self, data: bytes, addr: Tuple[str, int], sock: socket.socket
@@ -237,6 +240,17 @@ class DNSServer:
 
     def get_records(self):
         return self.records.records
+
+    def dns_fallback(self, domain: str, record_type: str):
+        resolv = resolver.Resolver(configure=False)
+        resolv.nameservers = config["dns_fallback"]
+        try:
+            # 执行 DNS 查询
+            answers = resolv.resolve(domain, record_type)
+            return answers.response
+        except Exception as e:
+            logger.error(f"Fallback查询失败：{e}")
+            return None
 
 
 # 示例：添加记录并启动 DNS 服务器
