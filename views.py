@@ -1,9 +1,17 @@
 from typing import Any
-from flask import Blueprint, request, current_app, render_template_string, make_response
+from flask import (
+    Blueprint,
+    request,
+    current_app,
+    render_template_string,
+    make_response,
+    Response,
+)
 import ujson
 from loguru import logger
 from flask_httpauth import HTTPBasicAuth
-
+from dns import message
+from base64 import b64decode
 
 # 初始化蓝图
 bp = Blueprint("api", __name__)
@@ -136,48 +144,25 @@ def query():
     return jsonify(location)
 
 
-@bp.route("/dns-query", methods=["GET"])
+@bp.route("/dns-query", methods=["GET", "POST"])
 def dns_query():
-    dns = current_app.config["dns"]
+    dnsser = current_app.config["dns"]
+    # 解析请求中的 DNS 参数
     try:
-        # 获取查询参数
-        domain = request.args.get("domain")
-        if not domain:
-            return jsonify({"error": "Missing 'domain' parameter"}), 400
-
-        # 获取查询类型，默认为 A 类型
-        qtype = request.args.get("type", "A")
-
-        # 执行查询
-        answers = dns.records.get_records(domain, qtype, request.remote_addr)
-
-        # 格式化响应数据
-        result = {"query": {"domain": domain, "type": qtype}, "answers": []}
-
-        if qtype == "A":
-            result["answers"].append({"type": "A", "address": answers["record"]})
-        elif qtype == "AAAA":
-            result["answers"].append({"type": "AAAA", "address": answers["record"]})
-        elif qtype == "CNAME":
-            result["answers"].append({"type": "CNAME", "target": answers["record"]})
-        elif qtype == "MX":
-            result["answers"].append(
-                {
-                    "type": "MX",
-                    "exchange": answers["record"].split(" ")[1],
-                    "priority": answers["record"].split(" ")[0],
-                }
-            )
-        elif qtype == "TXT":
-            result["answers"].append({"type": "TXT", "text": answers["record"]})
+        if request.method == "POST":
+            dns_query_data = request.form.get("dns")
         else:
-            result["answers"].append({"type": qtype, "data": answers["record"]})
+            dns_query_data = request.args.get("dns")
 
-        return jsonify(result), 200
+        if not dns_query_data:
+            return jsonify({"error": "DNS 参数缺失"}), 400
 
-    except dns.resolver.NXDOMAIN:
-        return jsonify({"error": "Domain not found"}), 404
-    except dns.resolver.NoAnswer:
-        return jsonify({"error": "No DNS record found for the query"}), 404
+        # 解码 Base64 数据并解析为 DNS 查询消息
+        query_message = message.from_wire(b64decode(dns_query_data))
+
+        response = dnsser.make_response(query_message, request.remote_addr).to_wire()
+        return Response(response, mimetype="application/dns-message")
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # 返回错误响应
+        return jsonify({"error": "error"}), 500
