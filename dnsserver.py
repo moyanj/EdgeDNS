@@ -1,11 +1,14 @@
 import socket
 import concurrent.futures
 from traceback import format_exc
-from dns import message, rdatatype, rcode, rrset, resolver
+from dns import message, rdatatype, rcode, rrset, resolver, rdataset
 from typing import Optional, List, Dict, Any, Tuple
 import ujson
 from xdb import XdbSearcher
 from loguru import logger
+from hashlib import sha256
+from threading import Lock
+import time
 
 config = ujson.load(open("data/config.json", "r"))
 
@@ -51,6 +54,97 @@ def is_sub_line(
     )
 
     return best_match[0] if best_match[1] > 0 else None
+
+
+import time
+from hashlib import sha256
+from dns import message  # 假设使用 dnspython 的 message 模块
+from threading import Lock
+
+
+class DNSCache:
+    def __init__(self, max_size: int = 1000):
+        self.cache: dict = {}  # 初始化缓存字典
+        self.max_size = max_size  # 设置最大缓存容量
+        self.access_order = []  # 用于实现 LRU 策略，记录缓存的访问顺序
+        self.lock = Lock()  # 用于多线程环境的安全性
+
+    def hash(self, msg) -> str:
+        """生成 DNS 查询消息的哈希值"""
+        if type(msg) == list:
+            return sha256(str(msg).encode()).hexdigest()
+        return sha256(msg.to_wire()).hexdigest()
+
+    def set(self, msg: message.Message, response: message.Message):
+        """存储 DNS 查询和响应"""
+        with self.lock:  # 确保线程安全
+            if not response.answer:
+                return  # 如果没有答案，不存储缓存
+            # 使用最小的 TTL 作为缓存过期时间
+            min_ttl = min(answer.ttl for answer in response.answer)
+            if min_ttl < 10:
+                min_ttl = 10
+            key = self.hash(msg.question)
+            expiry_time = time.time() + min_ttl
+
+            # 更新缓存条目的访问时间
+            if key in self.cache:
+                self.cache[key]["expiry"] = expiry_time
+                if key in self.access_order:
+                    self.access_order.remove(key)
+            else:
+                # 如果缓存已满，删除最旧的条目
+                while len(self.cache) >= self.max_size:
+                    oldest_key = self.access_order.pop(0)
+                    if oldest_key in self.cache:
+                        del self.cache[oldest_key]
+                self.cache[key] = {
+                    "expiry": expiry_time,
+                    "response": response.answer,
+                }
+            self.access_order.append(key)
+
+    def get(self, msg: message.Message):
+        """检索 DNS 查询的缓存响应"""
+        key = self.hash(msg.question)
+        with self.lock:
+            if key in self.cache:
+                cached_entry = self.cache[key]
+                if cached_entry["expiry"] > time.time():  # 检查是否过期
+                    # 更新最近访问的条目（LRU 策略）
+                    if key in self.access_order:
+                        self.access_order.remove(key)
+                    self.access_order.append(key)
+                    return cached_entry["response"]
+                else:
+                    # 删除过期条目
+                    del self.cache[key]
+                    if key in self.access_order:
+                        self.access_order.remove(key)
+        return None
+
+    def __contains__(self, key) -> bool:
+        """检查某个键是否在缓存中"""
+        with self.lock:
+            key = self.hash(key)
+            return key in self.cache
+
+    def clear(self):
+        """清空缓存"""
+        with self.lock:
+            self.cache.clear()
+            self.access_order.clear()
+
+    @property
+    def size(self) -> int:
+        """获取缓存中的项目数量"""
+        return len(self.cache)
+
+    @property
+    def entries(self) -> dict:
+        """获取缓存中的所有条目"""
+        with self.lock:
+            return self.cache.copy()
 
 
 class DNSRecords:
@@ -141,7 +235,11 @@ class DNSRecords:
 class DNSServer:
 
     def __init__(
-        self, ip: str = "0.0.0.0", port: int = 53, file: str = "data/records.json"
+        self,
+        ip: str = "0.0.0.0",
+        port: int = 53,
+        file: str = "data/records.json",
+        max_cache_size: int = 1000,
     ):
         self.server_ip: str = ip
         self.server_port: int = port
@@ -151,6 +249,7 @@ class DNSServer:
             concurrent.futures.ThreadPoolExecutor(max_workers=10)
         )
         self.running: bool = False
+        self.cache = DNSCache(max_cache_size)
 
     def create_response(self, query: message.Message, ip: str):
         """根据客户端查询构造响应。"""
@@ -226,6 +325,12 @@ class DNSServer:
 
     def dns_fallback(self, query: message.Message):
         logger.info("进入Fallback")
+        if query.question in self.cache:
+            cache = self.cache.get(query)
+            if cache:
+                ret = message.make_response(query)
+                ret.answer = cache
+                return ret
         resolv = resolver.Resolver(configure=False)
         resolv.nameservers = config["dns_fallback"]
         try:
@@ -233,6 +338,7 @@ class DNSServer:
             answers = resolv.resolve(query.question[0].name, query.question[0].rdtype)
             ret = message.make_response(query)
             ret.answer = answers.response.answer
+            self.cache.set(query, ret)
             return ret
         except Exception as e:
             logger.error(f"Fallback查询失败：{e}")
