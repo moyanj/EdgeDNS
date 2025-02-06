@@ -166,7 +166,9 @@ class DNSRecords:
         )
         if exists is not None:
             for exist in exists:
-                self.records[domain][record_type].remove(exist)
+                if exist["record"] == record and exist["location"] == location:
+                    self.records[domain][record_type].remove(exist)
+
         self.records[domain][record_type].append(
             {"record": record, "location": location, "ttl": ttl}
         )
@@ -205,7 +207,7 @@ class DNSRecords:
         for record in records:
             if record["location"] == location:
                 r.append(record)
-        return []
+        return r
 
     def domain_exists(self, domain: str) -> bool:
         return domain in self.records
