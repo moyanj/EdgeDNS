@@ -172,3 +172,19 @@ def dns_query():
     except Exception as e:
         # 返回错误响应
         return jsonify({"error": "error"}), 500
+
+
+@bp.route("/api/status")
+def status():
+    """
+    获取服务器状态
+    """
+    dns = current_app.config["dns"]
+    return jsonify(
+        {
+            "cache_size": dns.cache.size,
+            "cache_max_size": dns.cache.max_size,
+            "running": dns.running,
+            "num_records": len(dns.records.records),
+        }
+    )

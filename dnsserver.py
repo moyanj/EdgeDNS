@@ -56,12 +56,6 @@ def is_sub_line(
     return best_match[0] if best_match[1] > 0 else None
 
 
-import time
-from hashlib import sha256
-from dns import message  # 假设使用 dnspython 的 message 模块
-from threading import Lock
-
-
 class DNSCache:
     def __init__(self, max_size: int = 1000):
         self.cache: dict = {}  # 初始化缓存字典
