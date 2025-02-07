@@ -8,6 +8,7 @@ from logging import getLogger
 
 logger.remove()
 os.makedirs("data/logs", exist_ok=True)
+open("data/logs/dns.log", "w").close()
 logger.add("data/logs/dns.log", rotation="25 MB", level="DEBUG", enqueue=True)
 
 # 关闭flask的日志
