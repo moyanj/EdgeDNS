@@ -1,9 +1,8 @@
-from ast import Str
 import socket
 import concurrent.futures
 from traceback import format_exc
-from dns import message, rdatatype, rcode, rrset, resolver
-from typing import Optional, List, Dict, Any, Tuple, Generator
+from dns import message, rdatatype, rcode, rrset, resolver, exception
+from typing import Optional, List, Dict, Any, Tuple
 import ujson
 from xdb import XdbSearcher
 from loguru import logger
@@ -346,7 +345,11 @@ class DNSServer:
             ret.answer = answers.response.answer
             self.cache.set(query, ret)
             return ret
+        except exception.DNSException as e:
+            print(format_exc())
+            logger.error(f"Fallback查询失败：{e}")
         except Exception as e:
+            print(format_exc())
             logger.error(f"Fallback查询失败：{e}")
             return None
 
