@@ -345,9 +345,10 @@ class DNSServer:
             ret.answer = answers.response.answer
             self.cache.set(query, ret)
             return ret
-        except exception.DNSException as e:
-            print(format_exc())
-            logger.error(f"Fallback查询失败：{e}")
+        except resolver.NoAnswer as e:
+            ret = message.make_response(query)
+            self.cache.set(query, message.make_response(query))
+            return message.make_response(query)
         except Exception as e:
             print(format_exc())
             logger.error(f"Fallback查询失败：{e}")
